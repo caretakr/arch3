@@ -201,24 +201,16 @@ pacstrap /mnt \
     base-devel \
     bluez \
     bluez-utils \
-    bridge-utils \
     brightnessctl \
     broadcom-wl \
     bspwm \
     btop \
     btrfs-progs \
-    dmidecode \
-    dnsmasq \
-    docker \
     dosfstools \
     dunst \
-    edk2-ovmf \
     efibootmgr \
     feh \
-    firefox \
-    firefox-developer-edition \
     firewalld \
-    flatpak \
     git \
     gnupg \
     gstreamer \
@@ -233,20 +225,15 @@ pacstrap /mnt \
     gtk3 \
     gtk4 \
     intel-ucode \
-    iptables-nft \
     kitty \
     libva-intel-driver \
-    libvirt \
     linux \
     linux-firmware \
     linux-headers \
-    linux-lts \
-    linux-lts-headers \
     mkinitcpio \
     noto-fonts \
     noto-fonts-cjk \
     noto-fonts-emoji \
-    openbsd-netcat \
     openssh \
     picom \
     pinentry \
@@ -255,24 +242,14 @@ pacstrap /mnt \
     pipewire-jack \
     pipewire-pulse \
     playerctl \
-    polkit \
-    polkit-gnome \
     polybar \
-    python \
-    qemu-base \
-    qemu-emulators-full \
     rofi \
     rsync \
     rustup \
-    sof-firmware \
     sudo \
     sxhkd \
-    telegram-desktop \
-    ttf-font \
     vim \
-    virt-manager \
     wireplumber \
-    xdg-desktop-portal-gtk \
     xorg-server \
     xorg-xinit \
     xorg-xinput \
@@ -353,7 +330,7 @@ EOF
 
 _log "Setting user..."
 
-arch-chroot /mnt useradd -G docker,kvm,libvirt,wheel -m -s /bin/zsh caretakr
+arch-chroot /mnt useradd -G wheel -m -s /bin/zsh caretakr
 arch-chroot /mnt chown caretakr:caretakr /home/caretakr
 arch-chroot /mnt chmod 0700 /home/caretakr
 
@@ -386,11 +363,7 @@ arch-chroot /mnt sudo -u caretakr sh -c \
 _log "Setting AUR packages..."
 
 arch-chroot /mnt sudo -u caretakr paru -S --noconfirm \
-    android-studio \
-    google-chrome \
-    nvm \
     plymouth \
-    visual-studio-code-bin \
     xbanish
 
 _log "Setting ramdisk..."
@@ -423,13 +396,6 @@ initrd /initramfs-linux-fallback.img
 options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
 EOF
 
-cat <<EOF > /mnt/boot/loader/entries/arch-fallback.conf
-title Arch (LTS)
-linux /vmlinuz-linux
-initrd /initramfs-linux-lts.img
-options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
-EOF
-
 _log "Setting clean boot..."
 
 arch-chroot /mnt touch /root/.hushlogin
@@ -444,10 +410,8 @@ EOF
 _log "Enable services..."
 
 arch-chroot /mnt systemctl enable bluetooth
-arch-chroot /mnt systemctl enable docker
 arch-chroot /mnt systemctl enable firewalld
 arch-chroot /mnt systemctl enable fstrim.timer
-arch-chroot /mnt systemctl enable libvirtd
 
 arch-chroot /mnt systemctl enable systemd-networkd
 arch-chroot /mnt systemctl enable systemd-resolved
