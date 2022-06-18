@@ -4,33 +4,50 @@
 # Install
 #
 
-if [ "$EUID" -ne 0 ]
-  then echo "Please run as root"
-  
-  exit
-fi
-
-STORAGE_DEVICE="vda"
-
-BOOT_PARTITION="vda1"
-SWAP_PARTITION="vda2"
-DATA_PARTITION="vda3"
-
-SWAP_SIZE="3"
-
-_DATA_PASSWORD="1234"
-_USER_PASSWORD="1234"
-
-# Stop on error
-set -x
+set -e
 
 _log() {
-    set +x; echo "\n▶ $1\n"; set -x
+    printf "\n ▶ $1\n\n"
 }
+
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run as root: exiting..."; exit
+fi
+
+_log "Please provide the information below:"
+
+printf "▶ (1/5) Storage device? "; read _STORAGE_DEVICE
+
+if [ ! -b "/dev/$_STORAGE_DEVICE" ]; then
+    _log "Storage device not found: exiting..."; exit
+fi
+
+printf "▶ (2/5) Data password? "; read -s _DATA_PASSWORD && printf "\n"
+printf "▶ (3/5) Data password confirmation? "; read -s _DATA_PASSWORD_CONFIRMATION && printf "\n"
+
+if [ "$_DATA_PASSWORD" != "$_DATA_PASSWORD_CONFIRMATION" ]; then
+    _log "Data password mismatch: exiting..."; exit
+fi
+
+printf "▶ (4/5) User password? "; read -s _USER_PASSWORD && printf "\n"
+printf "▶ (5/5) User password confirmation? "; read -s _USER_PASSWORD_CONFIRMATION && printf "\n"
+
+if [ "$_USER_PASSWORD" != "$_USER_PASSWORD_CONFIRMATION" ]; then
+    _log "User password mismatch: exiting..."; exit
+fi
+
+BOOT_PARTITION="${_STORAGE_DEVICE}1"
+SWAP_PARTITION="${_STORAGE_DEVICE}2"
+DATA_PARTITION="${_STORAGE_DEVICE}3"
+
+_SWAP_SIZE=$(($(awk '( $1 == "MemTotal:" ) { printf "%3.0f", ($2/1024)*1.5 }' /proc/meminfo)*2048))
+_DATA_START=$(($_SWAP_SIZE+2099200))
 
 _log "Updating system clock..."
 
 timedatectl set-ntp true
+
+_log "Checking previous states..."
 
 if cat /proc/mounts | grep /mnt/boot >/dev/null; then
     _log "Unmounting boot partition..."
@@ -76,16 +93,16 @@ fi
 
 _log "Partitioning device..."
 
-sfdisk "/dev/$STORAGE_DEVICE" <<EOF
+sfdisk "/dev/$_STORAGE_DEVICE" <<EOF
 label: gpt
-device: /dev/$STORAGE_DEVICE
+device: /dev/$_STORAGE_DEVICE
 unit: sectors
 first-lba: 2048
 sector-size: 512
 
 /dev/$BOOT_PARTITION: start=2048, size=2097152, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
-/dev/$SWAP_PARTITION: start=2099200, size=$((($SWAP_SIZE*1024)*2048)), type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F
-/dev/$DATA_PARTITION: start=$(((($SWAP_SIZE*1024)*2048)+2099200)), size=, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+/dev/$SWAP_PARTITION: start=2099200, size=$_SWAP_SIZE, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F
+/dev/$DATA_PARTITION: start=$_DATA_START, size=, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
 EOF
 
 _log "Encrypting data partition..."
@@ -113,15 +130,15 @@ _log "Mounting data partition..."
 
 mount /dev/mapper/$DATA_PARTITION /mnt
 
-_log "Creating subvolume for user home..."
-
-mkdir -p /mnt/home/caretakr+SNAPSHOTS
-btrfs subvolume create /mnt/home/caretakr+LIVE
-
 _log "Creating subvolume for root..."
 
 mkdir -p /mnt/ROOT+SNAPSHOTS
 btrfs subvolume create /mnt/ROOT+LIVE
+
+_log "Creating subvolume for user home..."
+
+mkdir -p /mnt/home/caretakr+SNAPSHOTS
+btrfs subvolume create /mnt/home/caretakr+LIVE
 
 _log "Creating subvolume for root home..."
 
@@ -178,96 +195,231 @@ mount -o noatime,compress=zstd,subvol=var/log+LIVE \
 _log "Bootstrapping..."
 
 pacstrap /mnt \
+    acpid \
     alsa-utils \
     alsa-plugins \
     base \
     base-devel \
     bluez \
     bluez-utils \
+    brightnessctl \
+    bspwm \
+    btop \
     btrfs-progs \
     dosfstools \
+    dunst \
     efibootmgr \
+    feh \
     firewalld \
     git \
+    gnupg \
+    gstreamer \
+    gstreamer-vaapi \
+    gst-libav \
+    gst-plugin-pipewire \
+    gst-plugins-bad \
+    gst-plugins-base \
+    gst-plugins-good \
+    gst-plugins-ugly \
+    gtk2 \
+    gtk3 \
+    gtk4 \
     iio-sensor-proxy \
     intel-media-driver \
     intel-ucode \
+    kitty \
     linux \
     linux-firmware \
     linux-headers \
-    linux-lts \
-    linux-lts-headers \
+    mesa \
+    mkinitcpio \
+    noto-fonts \
+    noto-fonts-cjk \
+    noto-fonts-emoji \
+    openssh \
+    picom \
+    pinentry \
     pipewire \
     pipewire-alsa \
     pipewire-jack \
     pipewire-pulse \
+    playerctl \
+    polkit \
+    polkit-gnome \
+    polybar \
+    rofi \
+    rsync \
+    rust \
+    sof-firmware \
+    sudo \
+    sxhkd \
     vim \
+    vulkan-intel \
     wireplumber \
+    xorg-server \
+    xorg-xinit \
+    xorg-xinput \
+    xorg-xrandr \
+    xorg-xset \
     zsh
 
-_log "Generating file system table..."
+_log "Setting file system table..."
 
 genfstab -U /mnt >> /mnt/etc/fstab
 
 _log "Setting timezone..."
 
-arch-chroot /mnt sh -c "ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime"
-arch-chroot /mnt sh -c "hwclock --systohc"
+arch-chroot /mnt ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
+arch-chroot /mnt hwclock --systohc
 
 _log "Setting locale..."
 
-arch-chroot /mnt sh -c "sed -i '/^#en_US.UTF-8 UTF-8/s/^#//g' /etc/locale.gen"
-arch-chroot /mnt sh -c "sed -i '/^#pt_BR.UTF-8 UTF-8/s/^#//g' /etc/locale.gen"
+sed -i '/^#en_US.UTF-8 UTF-8/s/^#//g' /mnt/etc/locale.gen
+sed -i '/^#pt_BR.UTF-8 UTF-8/s/^#//g' /mnt/etc/locale.gen
 
-arch-chroot /mnt sh -c "locale-gen"
+arch-chroot /mnt locale-gen
 
 _log "Setting language..."
 
-arch-chroot /mnt sh -c "echo 'LANG=en_US.UTF-8' >> /etc/locale.conf"
-arch-chroot /mnt sh -c "echo 'KEYMAP=br-abnt2' >> /etc/vconsole.conf"
+cat <<EOF > /mnt/etc/locale.conf
+LANG=en_US.UTF-8
+EOF
+
+_log "Setting console..."
+
+cat <<EOF > /mnt/etc/vconsole.conf
+KEYMAP=br-abnt2
+EOF
 
 _log "Setting hosts..."
 
-arch-chroot /mnt sh -c "echo 'arch' >> /etc/hostname"
+cat <<EOF > /mnt/etc/hostname
+arch
+EOF
 
-arch-chroot /mnt sh -c "echo '127.0.0.1 localhost' >> /etc/hosts"
-arch-chroot /mnt sh -c "echo '::1 localhost' >> /etc/hosts"
-arch-chroot /mnt sh -c "echo '127.0.1.1 arch.localdomain arch' >> /etc/hosts"
+cat <<EOF > /mnt/etc/hosts
+127.0.0.1 localhost
+::1 localhost
+127.0.1.1 arch.localdomain arch
+EOF
+
+_log "Setting network..."
+
+cat <<EOF > /mnt/etc/systemd/network/20-ethernet.network
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+RouteMetric=10
+
+[IPv6AcceptRA]
+RouteMetric=10
+EOF
+
+cat <<EOF > /mnt/etc/systemd/network/25-wireless.network
+[Match]
+Name=wl*
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+RouteMetric=20
+
+[IPv6AcceptRA]
+RouteMetric=20
+EOF
 
 _log "Setting user..."
 
-arch-chroot /mnt sh -c "useradd -c Caio -G wheel -m -s /bin/zsh caio"
-arch-chroot /mnt sh -c "echo \"caio:$_USER_PASSWORD\" | chpasswd"
+arch-chroot /mnt useradd -G wheel -m -s /bin/zsh caretakr
+arch-chroot /mnt chown caretakr:caretakr /home/caretakr
+arch-chroot /mnt chmod 0700 /home/caretakr
+
+_log "Setting passwords..."
+
+echo "caretakr:$_USER_PASSWORD" | arch-chroot /mnt chpasswd
+
+_log "Setting sudoers..."
+
+cat <<EOF > /mnt/etc/sudoers.d/20-admin
+%wheel ALL=(ALL:ALL) ALL
+EOF
+
+cat <<EOF > /mnt/etc/sudoers.d/99-install
+ALL ALL=(ALL:ALL) NOPASSWD: ALL
+EOF
+
+_log "Setting Paru..."
+
+arch-chroot /mnt sudo -u caretakr git clone \
+    https://aur.archlinux.org/paru.git /var/tmp/paru
+
+arch-chroot /mnt sudo -u caretakr sh -c \
+    "(cd /var/tmp/paru && makepkg -si --noconfirm && cd / && rm -rf /var/tmp/paru)"
+
+_log "Setting AUR packages..."
+
+arch-chroot /mnt sudo -u caretakr paru -S --noconfirm \
+    plymouth \
+    xbanish
 
 _log "Setting ramdisk..."
 
-arch-chroot /mnt sh -c "sed -i '/^MODULES/s/(.*)/(btrfs)/g' /etc/mkinitcpio.conf"
-arch-chroot /mnt sh -c "sed -i '/^HOOKS/s/(.*)/(base udev autodetect keyboard keymap consolefont modconf block encrypt filesystems fsck)/g' /etc/mkinitcpio.conf"
-arch-chroot /mnt sh -c "mkinitcpio -P"
+sed -i '/^MODULES/s/(.*)/(i915 btrfs)/g' /mnt/etc/mkinitcpio.conf
+## sed -i '/^HOOKS/s/(.*)/(base udev autodetect keyboard keymap consolefont modconf block encrypt filesystems fsck)/g' /mnt/etc/mkinitcpio.conf
+sed -i '/^HOOKS/s/(.*)/(base udev plymouth autodetect keyboard keymap consolefont modconf block plymouth-encrypt filesystems fsck)/g' /mnt/etc/mkinitcpio.conf
+
+arch-chroot /mnt mkinitcpio -P
 
 _log "Setting bootloader..."
 
-arch-chroot /mnt sh -c "bootctl install"
+arch-chroot /mnt bootctl install
 
-arch-chroot /mnt sh -c "echo 'default arch' >> /boot/loader/loader.conf"
+cat <<EOF > /mnt/boot/loader/loader.conf
+default arch
+EOF
 
-arch-chroot /mnt sh -c "echo 'title Arch' >> /boot/loader/entries/arch.conf"
-arch-chroot /mnt sh -c "echo 'linux /vmlinuz-linux' >> /boot/loader/entries/arch.conf"
-arch-chroot /mnt sh -c "echo 'initrd /initramfs-linux.img' >> /boot/loader/entries/arch.conf"
-arch-chroot /mnt sh -c "echo 'options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw i915.enable_psr=0 i915.enable_fbc=1' >> /boot/loader/entries/arch.conf"
+cat <<EOF > /mnt/boot/loader/entries/arch.conf
+title Arch
+linux /vmlinuz-linux
+initrd /initramfs-linux.img
+options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
+EOF
 
-arch-chroot /mnt sh -c "echo 'title Arch (fallback)' >> /boot/loader/entries/arch-fallback.conf"
-arch-chroot /mnt sh -c "echo 'linux /vmlinuz-linux' >> /boot/loader/entries/arch-fallback.conf"
-arch-chroot /mnt sh -c "echo 'initrd /initramfs-linux-fallback.img' >> /boot/loader/entries/arch-fallback.conf"
-arch-chroot /mnt sh -c "echo 'options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw i915.enable_psr=0 i915.enable_fbc=1' >> /boot/loader/entries/arch-fallback.conf"
+cat <<EOF > /mnt/boot/loader/entries/arch-fallback.conf
+title Arch (fallback)
+linux /vmlinuz-linux
+initrd /initramfs-linux-fallback.img
+options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
+EOF
 
-arch-chroot /mnt sh -c "echo 'title Arch (LTS)' >> /boot/loader/entries/arch-lts.conf"
-arch-chroot /mnt sh -c "echo 'linux /vmlinuz-linux' >> /boot/loader/entries/arch-lts.conf"
-arch-chroot /mnt sh -c "echo 'initrd /initramfs-linux-lts.img' >> /boot/loader/entries/arch-lts.conf"
-arch-chroot /mnt sh -c "echo 'options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw i915.enable_psr=0 i915.enable_fbc=1' >> /boot/loader/entries/arch-lts.conf"
+_log "Setting clean boot..."
+
+arch-chroot /mnt touch /root/.hushlogin
+
+arch-chroot /mnt touch /home/caretakr/.hushlogin
+arch-chroot /mnt chown caretakr:caretakr /home/caretakr/.hushlogin
+
+arch-chroot /mnt setterm -cursor on >> /etc/issue
+
+cat <<EOF > /mnt/etc/sysctl.d/20-quiet.conf
+kernel.printk = 3 3 3 3
+EOF
 
 _log "Enable services..."
 
-arch-chroot /mnt systemctl enable fstrim.timer
+arch-chroot /mnt systemctl enable acpid
 arch-chroot /mnt systemctl enable bluetooth
 arch-chroot /mnt systemctl enable firewalld
+arch-chroot /mnt systemctl enable fstrim.timer
+
+arch-chroot /mnt systemctl enable systemd-networkd
+arch-chroot /mnt systemctl enable systemd-resolved
+
+_log "Cleanup..."
+
+rm -f /etc/sudoers.d/99-install
