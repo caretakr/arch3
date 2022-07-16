@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #
-# Install Arch on MacBook Pro 9,2
+# Install
 #
 
 set -e
@@ -203,7 +203,6 @@ pacstrap /mnt \
     bluez-utils \
     bridge-utils \
     brightnessctl \
-    broadcom-wl \
     bspwm \
     btop \
     btrfs-progs \
@@ -232,10 +231,11 @@ pacstrap /mnt \
     gtk2 \
     gtk3 \
     gtk4 \
+    iio-sensor-proxy \
+    intel-media-driver \
     intel-ucode \
     iptables-nft \
     kitty \
-    libva-intel-driver \
     libvirt \
     linux \
     linux-firmware \
@@ -246,6 +246,7 @@ pacstrap /mnt \
     noto-fonts \
     noto-fonts-cjk \
     noto-fonts-emoji \
+    nss-mdns \
     openbsd-netcat \
     openssh \
     picom \
@@ -260,17 +261,15 @@ pacstrap /mnt \
     polybar \
     python \
     qemu-base \
-    qemu-emulators-full \
     rofi \
-    rsync \
     rustup \
     sof-firmware \
-    sudo \
     sxhkd \
     telegram-desktop \
     ttf-font \
     vim \
     virt-manager \
+    which \
     wireplumber \
     xdg-desktop-portal-gtk \
     xorg-server \

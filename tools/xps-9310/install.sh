@@ -6,39 +6,39 @@
 
 set -e
 
-_log() {
-    printf "\n ▶ $1\n\n"
-}
-
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: exiting..."; exit
 fi
 
-_log "Please provide the information below:"
+_log() {
+    printf "\n▶ $1\n\n"
+}
 
-printf "▶ (1/5) Storage device? "; read _STORAGE_DEVICE
+_log "Please provide the following:"
+
+printf "▶ Storage device? "; read _STORAGE_DEVICE
 
 if [ ! -b "/dev/$_STORAGE_DEVICE" ]; then
     _log "Storage device not found: exiting..."; exit
 fi
 
-printf "▶ (2/5) Data password? "; read -s _DATA_PASSWORD && printf "\n"
-printf "▶ (3/5) Data password confirmation? "; read -s _DATA_PASSWORD_CONFIRMATION && printf "\n"
+printf "▶ Data password? "; read -s _DATA_PASSWORD && printf "\n"
+printf "▶ Data password confirmation? "; read -s _DATA_PASSWORD_CONFIRMATION && printf "\n"
 
 if [ "$_DATA_PASSWORD" != "$_DATA_PASSWORD_CONFIRMATION" ]; then
     _log "Data password mismatch: exiting..."; exit
 fi
 
-printf "▶ (4/5) User password? "; read -s _USER_PASSWORD && printf "\n"
-printf "▶ (5/5) User password confirmation? "; read -s _USER_PASSWORD_CONFIRMATION && printf "\n"
+printf "▶ User password? "; read -s _USER_PASSWORD && printf "\n"
+printf "▶ User password confirmation? "; read -s _USER_PASSWORD_CONFIRMATION && printf "\n"
 
 if [ "$_USER_PASSWORD" != "$_USER_PASSWORD_CONFIRMATION" ]; then
     _log "User password mismatch: exiting..."; exit
 fi
 
-BOOT_PARTITION="${_STORAGE_DEVICE}1"
-SWAP_PARTITION="${_STORAGE_DEVICE}2"
-DATA_PARTITION="${_STORAGE_DEVICE}3"
+_BOOT_PARTITION="${_STORAGE_DEVICE}1"
+_SWAP_PARTITION="${_STORAGE_DEVICE}2"
+_DATA_PARTITION="${_STORAGE_DEVICE}3"
 
 _SWAP_SIZE=$(($(awk '( $1 == "MemTotal:" ) { printf "%3.0f", ($2/1024)*1.5 }' /proc/meminfo)*2048))
 _DATA_START=$(($_SWAP_SIZE+2099200))
@@ -55,22 +55,16 @@ if cat /proc/mounts | grep /mnt/boot >/dev/null; then
     umount /mnt/boot
 fi
 
-if cat /proc/mounts | grep /mnt/home/caretakr >/dev/null; then
-    _log "Unmounting user home partition..."
-
-    umount /mnt/home/caretakr
-fi
-
 if cat /proc/mounts | grep /mnt/root >/dev/null; then
     _log "Unmounting root home partition..."
 
     umount /mnt/root
 fi
 
-if cat /proc/mounts | grep /mnt/var/lib/libvirt/images >/dev/null; then
-    _log "Unmounting libvirt images partition..."
+if cat /proc/mounts | grep /mnt/home/caretakr >/dev/null; then
+    _log "Unmounting user home partition..."
 
-    umount /mnt/var/lib/libvirt/images
+    umount /mnt/home/caretakr
 fi
 
 if cat /proc/mounts | grep /mnt/var/log >/dev/null; then
@@ -79,16 +73,22 @@ if cat /proc/mounts | grep /mnt/var/log >/dev/null; then
     umount /mnt/var/log
 fi
 
+if cat /proc/mounts | grep /mnt/var/lib/libvirt/images >/dev/null; then
+    _log "Unmounting libvirt images partition..."
+
+    umount /mnt/var/lib/libvirt/images
+fi
+
 if cat /proc/mounts | grep /mnt >/dev/null; then
     _log "Unmounting root partition..."
 
     umount /mnt
 fi
 
-if [ -b /dev/mapper/$DATA_PARTITION ]; then
+if [ -b /dev/mapper/$_DATA_PARTITION ]; then
     _log "Closing encrypted device..."
 
-    cryptsetup close $DATA_PARTITION
+    cryptsetup close $_DATA_PARTITION
 fi
 
 _log "Partitioning device..."
@@ -100,50 +100,50 @@ unit: sectors
 first-lba: 2048
 sector-size: 512
 
-/dev/$BOOT_PARTITION: start=2048, size=2097152, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
-/dev/$SWAP_PARTITION: start=2099200, size=$_SWAP_SIZE, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F
-/dev/$DATA_PARTITION: start=$_DATA_START, size=, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+/dev/$_BOOT_PARTITION: start=2048, size=2097152, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+/dev/$_SWAP_PARTITION: start=2099200, size=$_SWAP_SIZE, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F
+/dev/$_DATA_PARTITION: start=$_DATA_START, size=, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
 EOF
 
 _log "Encrypting data partition..."
 
-printf $_DATA_PASSWORD | cryptsetup luksFormat /dev/$DATA_PARTITION -d -
+printf $_DATA_PASSWORD | cryptsetup luksFormat /dev/$_DATA_PARTITION -d -
 
 _log "Opening data partition..."
 
-printf $_DATA_PASSWORD | cryptsetup luksOpen /dev/$DATA_PARTITION \
-    $DATA_PARTITION -d -
+printf $_DATA_PASSWORD | cryptsetup luksOpen /dev/$_DATA_PARTITION \
+    $_DATA_PARTITION -d -
 
 _log "Formatting boot partition..."
 
-mkfs.fat -F 32 /dev/$BOOT_PARTITION
+mkfs.fat -F 32 /dev/$_BOOT_PARTITION
 
 _log "Formatting swap partition..."
 
-mkswap /dev/$SWAP_PARTITION
+mkswap /dev/$_SWAP_PARTITION
 
 _log "Formatting data partition..."
 
-mkfs.btrfs -f /dev/mapper/$DATA_PARTITION
+mkfs.btrfs -f /dev/mapper/$_DATA_PARTITION
 
 _log "Mounting data partition..."
 
-mount /dev/mapper/$DATA_PARTITION /mnt
+mount /dev/mapper/$_DATA_PARTITION /mnt
 
 _log "Creating subvolume for root..."
 
 mkdir -p /mnt/ROOT+SNAPSHOTS
 btrfs subvolume create /mnt/ROOT+LIVE
 
-_log "Creating subvolume for user home..."
-
-mkdir -p /mnt/home/caretakr+SNAPSHOTS
-btrfs subvolume create /mnt/home/caretakr+LIVE
-
 _log "Creating subvolume for root home..."
 
 mkdir -p /mnt/root+SNAPSHOTS
 btrfs subvolume create /mnt/root+LIVE
+
+_log "Creating subvolume for user home..."
+
+mkdir -p /mnt/home/caretakr+SNAPSHOTS
+btrfs subvolume create /mnt/home/caretakr+LIVE
 
 _log "Creating subvolume for logs..."
 
@@ -162,40 +162,39 @@ umount /mnt
 _log "Mounting root subvolume..."
 
 mount -o noatime,compress=zstd,subvol=ROOT+LIVE \
-    /dev/mapper/$DATA_PARTITION /mnt
+    /dev/mapper/$_DATA_PARTITION /mnt
 
 _log "Creating mount points..."
 
-mkdir -p /mnt/{boot,home/caretakr,root,var/lib/libvirt/images,var/log}
+mkdir -p /mnt/{boot,root,home/caretakr,var/lib/libvirt/images,var/log}
 
 _log "Mounting boot partition..."
 
-mount -o umask=0077 /dev/$BOOT_PARTITION /mnt/boot
-
-_log "Mounting user home subvolume..."
-
-mount -o noatime,compress=zstd,subvol=home/caretakr+LIVE \
-    /dev/mapper/$DATA_PARTITION /mnt/home/caretakr
+mount -o umask=0077 /dev/$_BOOT_PARTITION /mnt/boot
 
 _log "Mounting root home subvolume..."
 
 mount -o noatime,compress=zstd,subvol=root+LIVE \
-    /dev/mapper/$DATA_PARTITION /mnt/root
+    /dev/mapper/$_DATA_PARTITION /mnt/root
 
-_log "Mounting libvirt images subvolume..."
-    
-mount -o noatime,nodatacow,compress=zstd,subvol=var/lib/libvirt/images+LIVE \
-    /dev/mapper/$DATA_PARTITION /mnt/var/lib/libvirt/images
+_log "Mounting user home subvolume..."
+
+mount -o noatime,compress=zstd,subvol=home/caretakr+LIVE \
+    /dev/mapper/$_DATA_PARTITION /mnt/home/caretakr
 
 _log "Mounting logs subvolume..."
 
 mount -o noatime,compress=zstd,subvol=var/log+LIVE \
-    /dev/mapper/$DATA_PARTITION /mnt/var/log
+    /dev/mapper/$_DATA_PARTITION /mnt/var/log
+
+_log "Mounting libvirt images subvolume..."
+    
+mount -o noatime,nodatacow,compress=zstd,subvol=var/lib/libvirt/images+LIVE \
+    /dev/mapper/$_DATA_PARTITION /mnt/var/lib/libvirt/images
 
 _log "Bootstrapping..."
 
 pacstrap /mnt \
-    acpid \
     alsa-utils \
     alsa-plugins \
     base \
@@ -212,22 +211,21 @@ pacstrap /mnt \
     feh \
     firewalld \
     git \
+    gnome-keyring \
     gnupg \
     gstreamer \
-    gstreamer-vaapi \
+    gstreamer-vaapi \ 
     gst-libav \
     gst-plugin-pipewire \
     gst-plugins-bad \
     gst-plugins-base \
     gst-plugins-good \
     gst-plugins-ugly \
-    gtk2 \
-    gtk3 \
-    gtk4 \
     iio-sensor-proxy \
     intel-media-driver \
     intel-ucode \
     kitty \
+    libsecret \
     linux \
     linux-firmware \
     linux-headers \
@@ -250,6 +248,7 @@ pacstrap /mnt \
     rofi \
     rsync \
     rust \
+    seahorse \
     sof-firmware \
     sudo \
     sxhkd \
@@ -369,8 +368,7 @@ arch-chroot /mnt sudo -u caretakr paru -S --noconfirm \
 
 _log "Setting ramdisk..."
 
-sed -i '/^MODULES/s/(.*)/(i915 btrfs)/g' /mnt/etc/mkinitcpio.conf
-## sed -i '/^HOOKS/s/(.*)/(base udev autodetect keyboard keymap consolefont modconf block encrypt filesystems fsck)/g' /mnt/etc/mkinitcpio.conf
+sed -i '/^MODULES/s/(.*)/(btrfs)/g' /mnt/etc/mkinitcpio.conf
 sed -i '/^HOOKS/s/(.*)/(base udev plymouth autodetect keyboard keymap consolefont modconf block plymouth-encrypt filesystems fsck)/g' /mnt/etc/mkinitcpio.conf
 
 arch-chroot /mnt mkinitcpio -P
@@ -387,14 +385,14 @@ cat <<EOF > /mnt/boot/loader/entries/arch.conf
 title Arch
 linux /vmlinuz-linux
 initrd /initramfs-linux.img
-options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
+options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$_DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$_DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet splash loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
 EOF
 
 cat <<EOF > /mnt/boot/loader/entries/arch-fallback.conf
 title Arch (fallback)
 linux /vmlinuz-linux
 initrd /initramfs-linux-fallback.img
-options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
+options cryptdevice=UUID=$(blkid -s UUID -o value /dev/$_DATA_PARTITION):root:allow-discards root=UUID=$(blkid -s UUID -o value /dev/mapper/$_DATA_PARTITION) rootflags=subvol=ROOT+LIVE rw quiet splash loglevel=3 rd.systemd.show_status=auto rd.udev.log_level=3 vt.global_cursor_default=0 i915.enable_psr=0 i915.enable_fbc=1
 EOF
 
 _log "Setting clean boot..."
@@ -422,4 +420,4 @@ arch-chroot /mnt systemctl enable systemd-resolved
 
 _log "Cleanup..."
 
-rm -f /etc/sudoers.d/99-install
+rm -f /mnt/etc/sudoers.d/99-install
